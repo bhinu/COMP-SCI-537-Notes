@@ -4,6 +4,25 @@
 
 ---
 
+## EXAM PRIORITY MAP (based on SP22, F15, S23 sample midterms)
+
+> **Tier 1: drill heavily, multiple Qs across multiple exams**
+> - Section 6 (HDD mechanics + RPM math): SP22 Q36, Q37; F15 Q1-Q4; S23 Q4-Q11
+> - Section 7 (SSD ops, page vs block, cell types): S23 Q44; conceptual base for SSD Qs
+> - Section 8 (FTL: direct map vs log): SP22 Q49, Q50; S23 Q44
+>
+> **Tier 2: know cold, lighter weight (1-2 Qs typical)**
+> - Section 2 (Polling vs Interrupts): SP22 Q1; S23 Q3 (interrupt latency T/F gotcha)
+> - Section 3 (PIO vs DMA): SP22 Q48 (DMA = device transfers, NOT CPU)
+> - Section 5 (Drivers): SP22 Q2-Q3 (every device has SOME driver, but network driver doesn't talk to all NICs)
+>
+> **Tier 3: skim, conceptual familiarity only (rarely tested)**
+> - Section 1 (Device model basics)
+> - Section 4 (NVMe queue mechanism)
+> - Section 9 (Throughput reference table)
+
+---
+
 ## TL;DR (read first if cramming)
 
 1. **OS talks to devices** via memory-mapped registers (Status, Command, Data). Loop: wait for ready -> write data -> write command -> wait for done.
@@ -15,7 +34,7 @@
 
 ---
 
-## 1. How OS Talks to I/O Devices
+## 1. How OS Talks to I/O Devices  `[TIER 3]`
 
 ### Canonical Device Model
 Every device exposes 3 registers to the OS:
@@ -47,7 +66,9 @@ Faster devices sit closer to CPU on faster buses.
 
 ---
 
-## 2. Polling vs Interrupts
+## 2. Polling vs Interrupts  `[TIER 2]`
+
+> **Sample exam hits:** SP22 Q1 (false: "interrupts have lower latency than polling" - it's the opposite), S23 Q3 (true: interrupts have higher latency for fast devices)
 
 | | Polling | Interrupts |
 |---|---|---|
@@ -64,9 +85,13 @@ Faster devices sit closer to CPU on faster buses.
 - **Synchronous**: OS launches, device completes (read disk, send packet). Polling can work.
 - **Asynchronous**: triggered externally (keystroke, packet arrives). Interrupts are needed since the OS doesn't know when to poll.
 
+> **Gotcha to memorize**: "Interrupts always have lower latency than polling" is FALSE. Interrupts have lower CPU cost; polling has lower latency for fast devices.
+
 ---
 
-## 3. PIO vs DMA
+## 3. PIO vs DMA  `[TIER 2]`
+
+> **Sample exam hits:** SP22 Q48 (false: "with DMA the CPU transfers data" - DMA means the device does it)
 
 ### PIO (Programmed I/O)
 CPU directly copies data byte-by-byte between RAM and device register. Wastes CPU on data movement.
@@ -76,11 +101,11 @@ CPU directly copies data byte-by-byte between RAM and device register. Wastes CP
 - Device reads/writes RAM **on its own** while CPU does other work.
 - Device interrupts when done.
 
-**Key exam point**: with DMA, the **device** transfers data, NOT the CPU. (Quiz answer note below.)
+> **Single-sentence answer for exam:** With DMA, the **device** transfers data, NOT the CPU. This is the entire point.
 
 ---
 
-## 4. Batching: I/O Request Queues (NVMe-style)
+## 4. Batching: I/O Request Queues (NVMe-style)  `[TIER 3]`
 
 For multiple outstanding requests:
 - **Submission Queue (SQ)** in host memory: driver puts commands here.
@@ -90,9 +115,13 @@ For multiple outstanding requests:
 
 This enables many in-flight requests with minimal per-request overhead.
 
+> Not seen in any sample exam. Skim only.
+
 ---
 
-## 5. Device Drivers
+## 5. Device Drivers  `[TIER 3]`
+
+> **Sample exam hits:** SP22 Q2 (true: every device has a driver), Q3 (false: a network driver does NOT talk to all NICs - each NIC needs its own driver).
 
 ### Why drivers exist
 Tons of devices, each with its own protocol. Solution:
@@ -108,7 +137,13 @@ Tons of devices, each with its own protocol. Solution:
 
 ---
 
-## 6. Hard Disks (HDDs)
+## 6. Hard Disks (HDDs)  `[TIER 1 - DRILL HEAVILY]`
+
+> **Sample exam hits**:
+> - SP22 Q36 (6000 RPM -> avg rotation 5 ms), Q37 (8 MB track @ 6000 RPM -> 800 MB/s)
+> - F15 Q1-Q4 (geometry: heads, capacity, cylinder size, sector size)
+> - S23 Q4 (RPM vs diameter effect on sequential), Q5 (smaller diameter = shorter seek), Q6 (3000 RPM -> 10 ms avg), Q7 (random vs sequential), Q11 (disk scheduling fairness)
+> - Implicit: this section underlies every disk question
 
 ### Anatomy
 - **Platter**: round disk coated with magnetic film. Stores data.
@@ -134,16 +169,41 @@ Disk address space = array of sectors. Operation = read/write N sectors starting
 - Head in wrong place: read 1KB takes **8-17 ms** (~3400x slower)
 - **Lesson**: sequential access on a track = no seek + no rotate = fast. **Random access = brutal**.
 
-### Worst case rotational delay formula
-> `Worst case rotation = full revolution = 60 / RPM seconds`
+### Rotational delay formulas (memorize)
+```
+Worst case rotation = full revolution = 60 / RPM seconds = 60000 / RPM ms
+Average rotation    = half revolution = 60 / (2*RPM) sec = 30000 / RPM ms
+Transfer rate       = track_size_MB * RPM / 60   MB/sec
+```
 
-Example from quiz: disk at 3000 RPM (50 RPS) -> worst case = 1/50 = **20 ms**.
+Drill table (these are the values actually tested):
+| RPM | Avg rotation | Worst case |
+|---|---|---|
+| 3000 | 10 ms | 20 ms |
+| 6000 | 5 ms | 10 ms |
+| 7200 | 4.16 ms | 8.33 ms |
+| 10000 | 3 ms | 6 ms |
+| 15000 | 2 ms | 4 ms |
 
-(Average rotation = half a revolution = 60 / (2*RPM).)
+### Disk geometry math (F15 Q1-Q4 pattern)
+```
+Heads          = surfaces (one head per surface)
+Cylinder size  = bytes_per_track * surfaces
+Total capacity = surfaces * tracks_per_surface * bytes_per_track
+Sector size    = bytes_per_track / sectors_per_track
+```
+
+> **Note from pattern summary**: disk scheduling (FCFS, SSTF, SCAN, C-SCAN, SPTF) is also Tier 1 but is covered in the disk scheduling lecture, not here. Don't forget to drill it separately.
 
 ---
 
-## 7. Solid-State Drives (SSDs)
+## 7. Solid-State Drives (SSDs)  `[TIER 1 - DRILL HEAVILY]`
+
+> **Sample exam hits**:
+> - SP22 Q49 (direct map @ 500 erases/sec -> ~500 random writes/sec)
+> - SP22 Q50 (log @ 10000 page writes/sec -> 10000 random writes/sec)
+> - S23 Q44 (same workload comparison)
+> - Pattern summary calls this Tier 1
 
 ### Why SSDs exist
 HDDs are mechanical and slow. SSDs use **NAND flash** (transistor-based, no moving parts). Persistent unlike DRAM.
@@ -171,6 +231,8 @@ Levels are distinct **voltage levels** within one cell. More levels = harder to 
 - **Page** = a few KB (e.g., 4 KB). Smallest read/write unit.
 - **Block** = many pages (e.g., 128 KB or 256 KB). Smallest erase unit.
 
+> **Trap question**: "Read, Program, and Erase all operate on ~4 KB segments." FALSE. Only Read and Program are page-level. Erase is block-level.
+
 ### Wear-out
 A block fails after ~1000 erases (slowest/highest density QLC) up to ~100,000 erases (fastest/lowest density SLC).
 
@@ -187,7 +249,13 @@ Page addresses are striped across multiple flash chips (like RAID 0). Single req
 
 ---
 
-## 8. Flash Translation Layer (FTL) - **HIGH YIELD**
+## 8. Flash Translation Layer (FTL)  `[TIER 1 - HIGHEST YIELD]`
+
+> **Sample exam hits**:
+> - SP22 Q49: direct-map random write throughput = erases per second
+> - SP22 Q50: log-based random write throughput = page writes per second (~10000)
+> - S23 Q44: same pattern
+> - Pattern summary explicitly calls this out as Tier 1
 
 The FTL is firmware inside the SSD. It exists because flash can't do in-place writes.
 
@@ -209,6 +277,8 @@ To write page N:
 - **Write amplification**: writing 1 page = read+erase+write whole block. Slow.
 - **Poor reliability**: hot logical blocks pound their physical block to death.
 - **Data loss risk**: if power fails between erase and rewrite, you lose the whole block.
+
+> **Exam math**: random write throughput on direct-map SSD = erases per second. If the SSD does 500 erases/sec, you get 500 random writes/sec. If 1000 erases/sec, you get 1000.
 
 ### Approach #2: Log-Based Mapping (GOOD - this is what real SSDs do)
 
@@ -244,6 +314,8 @@ write(page=92, data=w4):  // overwrite of page 92!
 - **Natural wear leveling**: writes spread across pages even if logical writes have spatial locality.
 - Better reliability.
 
+> **Exam math**: random write throughput on log-based SSD = page program rate. If pages program at 100 us each, that's ~10000 page writes/sec.
+
 ### Garbage Collection (GC)
 Eventually old pages take up too much space and the log fills up. GC reclaims space:
 1. Pick a block with mostly garbage pages.
@@ -262,7 +334,7 @@ Even live (non-garbage) data that's never overwritten gets shuffled occasionally
 
 ---
 
-## 9. SSD vs HDD Throughput (from slides)
+## 9. SSD vs HDD Throughput (from slides)  `[TIER 3 - reference]`
 
 | Device | Random Read | Random Write | Seq Read | Seq Write |
 |---|---|---|---|---|
@@ -288,35 +360,30 @@ Even live (non-garbage) data that's never overwritten gets shuffled occasionally
 
 ---
 
-## 11. Likely Exam Questions / What to Drill
+## 11. What to Drill (ranked by sample exam frequency)
 
-### Conceptual
-- Why is polling sometimes better than interrupts? (Fast devices.)
-- What is livelock and how do you prevent it? (Drop interrupts while making progress.)
-- Why do we need DMA? (Free the CPU during data transfer.)
-- Why does flash require an FTL? (Can't overwrite pages in place; erase is at block granularity.)
-- Why does log-based FTL help wear leveling? (Writes naturally spread across all pages.)
+1. **HDD time formula and RPM math** (Tier 1). Be able to compute average rotational delay from RPM, transfer time from track size + RPM, and total access time given seek + rotation + transfer in seconds. SP22 and S23 both hit this directly.
+2. **SSD direct map vs log random write throughput** (Tier 1). Direct = erases/sec, Log = page writes/sec. SP22 Q49-Q50 nailed this exactly.
+3. **Page vs block granularity** (Tier 1). Read/program = page. Erase = block. This T/F shows up as a trap.
+4. **Erase >> Program > Read cost order** (Tier 1).
+5. **DMA: device transfers, not CPU** (Tier 2). One-line gotcha.
+6. **Polling latency vs interrupt latency** (Tier 2). Interrupts have HIGHER latency for fast devices, not lower.
+7. **HDD geometry math** (Tier 2). F15 hit this hard, SP22/S23 less so.
 
-### Quantitative (practice these)
-- Compute total HDD access time given seek, RPM, transfer rate, and request size.
-- Worst-case and average rotational delay from RPM.
-- Compare random vs sequential workload performance.
-- Trace through a sequence of FTL writes and identify garbage pages + map state.
+## 12. What to Skim (low yield)
 
-### "Gotcha" facts to memorize
-- Page = read/write unit. Block = erase unit.
-- Erase >> Program > Read in cost.
-- Erase sets bits to **1**, program clears selected bits to 0.
-- DMA = device does the transfer, not the CPU.
-- HDD random I/O is ~3400x slower than sequential.
+- NVMe SQ/CQ doorbell mechanics. Not seen in any sample.
+- Driver class interface details. SP22 had two T/F that just need the gist.
+- Throughput reference numbers. Just know SSD random vastly beats HDD random.
 
 ---
 
-## 12. One-Page Cheat Sheet (for Midterm 3 sheet)
+## 13. One-Page Cheat Sheet (for Midterm 3 sheet)
 
 ```
 HDD: time = seek (4-9ms) + rotation (4-8ms) + transfer (0.005ms/KB)
-     worst rotation = 60/RPM, avg = 30/RPM
+     worst rotation = 60000/RPM ms, avg = 30000/RPM ms
+     transfer rate = track_size_MB * RPM / 60 MB/s
      random ~3400x slower than sequential
 
 SSD ops: read 25-75us | program 200-1400us | erase 1.5-4.5ms
@@ -324,8 +391,8 @@ Page = R/W unit (~4KB). Block = erase unit (~128-256KB).
 Erase sets all bits to 1. Program clears bits to 0.
 
 FTL goals: translate, reduce write amp, wear level
-Direct map: bad (write amp, hot blocks die)
-Log-based: writes go to end of log + map tracks logical->physical
+Direct map: random writes = erases/sec (BAD: ~500/sec, write amp, hot blocks die)
+Log-based:  random writes = page writes/sec (GOOD: ~10000/sec)
 GC: read live pages, rewrite to log, erase old block
 Overprovisioning: hidden pages let GC work in background
 
