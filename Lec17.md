@@ -2,9 +2,37 @@
 
 Post-midterm content. Two halves: SSDs (slides 1-29) and Files API (slides 30-69).
 
+---
+
+## EXAM PRIORITY MAP (based on SP22, F15, S23 sample midterms)
+
+> **Tier 1: drill heavily**
+> - Part A Section 3 (Three NAND ops + costs): conceptual base for every SSD Q
+> - Part A Section 6-7 (FTL direct vs log + GC): SP22 Q49, Q50; S23 Q44
+> - Part B Section 4 (Path translation cost): related to inode/path traversal Tier 1 pattern; S23 Q24 directly
+>
+> **Tier 2: know cold, lighter weight**
+> - Part B Section 7-8 (FD model + offset semantics): S23 Q28, Q29, Q30, Q31 (a four-question block)
+> - Part B Section 11 (Deletion: unlink + close + refcount): S23 Q42 (open + fork + unlink scenario)
+> - Part B Section 13 (Atomic file update idiom): conceptual foundation for crash consistency
+>
+> **Tier 3: skim, low yield**
+> - Part A Section 1 (Workloads framing)
+> - Part A Section 2 (Cell types - just know "more bits = denser, slower, less reliable")
+> - Part A Section 5 (Striping)
+> - Part A Section 10 (Throughput numbers)
+> - Part B Section 1-3 (file/inode/path intro - background only)
+> - Part B Section 5 (Special directory entries)
+> - Part B Section 9 (lseek mechanics)
+> - Part B Section 12 (rename internals)
+
+---
+
 # Part A: SSDs and Flash Storage
 
-## 1. Workloads (the framing for everything that follows)
+> **Note**: Part A repeats most of L16's SSD material. If you've already drilled L16, you can use this as review and focus your time on Part B (the FD/offset semantics).
+
+## 1. Workloads (the framing for everything that follows)  `[TIER 3]`
 
 | Type | What it looks like | Metric | Bottleneck |
 |---|---|---|---|
@@ -15,7 +43,7 @@ Post-midterm content. Two halves: SSDs (slides 1-29) and Files API (slides 30-69
 - Sequential threshold: ~20 MB makes transfer time dominate seek/rotate (5 ms/MB transfer vs 10 ms seek/rotate, so 20 MB transfer = 100 ms transfer >> 10 ms seek).
 - Random IOPS for HDD: ~100 (10 ms per seek/rotate).
 
-## 2. NAND Flash Cell Types
+## 2. NAND Flash Cell Types  `[TIER 3]`
 
 A flash cell stores bits using distinct voltage levels.
 
@@ -26,9 +54,11 @@ A flash cell stores bits using distinct voltage levels.
 | TLC | 3 | Even lower | Even slower |
 | QLC (Quad Level) | 4 | ~1,000-1,600 | Slowest |
 
-**More bits per cell = denser = cheaper, but slower and less reliable.**
+**More bits per cell = denser = cheaper, but slower and less reliable.** That sentence is all you need.
 
-## 3. The Three NAND Operations (and their costs)
+## 3. The Three NAND Operations and Costs  `[TIER 1]`
+
+> **Sample exam hits**: This is the foundation for SP22 Q49, Q50 and S23 Q44 (FTL throughput math).
 
 | Op | What it does | Granularity | Latency |
 |---|---|---|---|
@@ -42,18 +72,22 @@ A flash cell stores bits using distinct voltage levels.
 
 Compare to HDD: 4-9 ms seek + 4-7 ms rotational latency. SSD random reads crush HDDs (75 us vs 8+ ms).
 
-## 4. Block vs Page
+## 4. Block vs Page  `[TIER 1]`
 
 - **Page:** the unit of read and program (~4 KB).
 - **Block:** the unit of erase (128-256 KB, holds many pages).
 
 This mismatch is the entire reason FTL exists.
 
-## 5. Striping
+> **Direct trap question** (likely T/F): "Read, Erase, and Program all operate on ~4 KB segments." FALSE. Only read and program. Erase is block-level.
+
+## 5. Striping  `[TIER 3]`
 
 Page addresses are striped across multiple flash chips like array indices. A single request can span chips in parallel. This gives natural load balancing without any explicit RAID-style logic.
 
-## 6. Flash Translation Layer (FTL)
+## 6. Flash Translation Layer (FTL)  `[TIER 1 - HIGHEST YIELD]`
+
+> **Sample exam hits**: SP22 Q49 (direct map throughput = erases/sec ~500/sec), SP22 Q50 (log throughput = page writes/sec ~10000/sec), S23 Q44 (same comparison)
 
 FTL is firmware (or sometimes software) that sits between the OS's logical block view and the physical NAND. It has three jobs:
 
@@ -61,7 +95,7 @@ FTL is firmware (or sometimes software) that sits between the OS's logical block
 2. **Reduce write amplification** (extra writes caused by the erase-block constraint).
 3. **Wear leveling:** distribute writes evenly across blocks so no single hot block burns out first.
 
-### FTL Approach 1: Direct Mapping
+### FTL Approach 1: Direct Mapping  `[TIER 1]`
 
 Logical page N maps 1-to-1 to physical page N.
 
@@ -72,7 +106,9 @@ Logical page N maps 1-to-1 to physical page N.
 1. **Write amplification.** A 4 KB write triggers a full block read + erase + program. That's bad latency and bad wear.
 2. **Poor reliability.** Repeated writes to the same logical block hammer the same physical block. It dies fast. Worse, if power fails between the erase and the rewrite, you lose data.
 
-### FTL Approach 2: Log-Based Mapping (the real-world approach)
+> **Exam math**: random write throughput = erases per second. SSD spec sheet says 500 erases/sec? Then ~500 random 4KB writes/sec.
+
+### FTL Approach 2: Log-Based Mapping  `[TIER 1]`
 
 Treat the SSD like an append-only log.
 
@@ -85,6 +121,8 @@ Treat the SSD like an append-only log.
 - Naturally spreads writes (good wear leveling) even if logical access is hot.
 
 **Trade-off:** garbage accumulates, so you eventually need garbage collection.
+
+> **Exam math**: random write throughput = page writes per second. ~100 us per program -> ~10000 random writes/sec. Roughly **20x better than direct map**.
 
 ### Walkthrough (memorize this pattern)
 
@@ -110,7 +148,7 @@ write(logical=92, data=w4):  // overwrite!
   17 -> 1, 33 -> 2, 68 -> 3
 ```
 
-## 7. Garbage Collection
+## 7. Garbage Collection  `[TIER 1]`
 
 **Problem:** overwritten pages are garbage but still occupy space, and they share blocks with valid data.
 
@@ -123,18 +161,20 @@ write(logical=92, data=w4):  // overwrite!
 
 **The cost:** GC adds extra read + write traffic the user didn't ask for. This is a major source of write amplification in real SSDs.
 
-## 8. Overprovisioning
+## 8. Overprovisioning  `[TIER 2]`
 
 The SSD reports a smaller logical capacity than its actual physical capacity. The hidden pages are reserve space.
 
 **Why:** keeps free pages available so the FTL can defer GC to a background task instead of running it on the critical write path.
 
-## 9. Wear Leveling (two flavors)
+> **Trap T/F**: "Overprovisioning hurts performance." FALSE. It helps by deferring GC.
+
+## 9. Wear Leveling (two flavors)  `[TIER 2]`
 
 - **Dynamic wear leveling:** spreading active writes across blocks (the log-based approach already does this for hot data).
 - **Static wear leveling:** periodically shuffling cold blocks (data that never gets overwritten) to other locations so those underused blocks also get exercised. Without this, cold blocks would just sit there while hot blocks get reused over and over.
 
-## 10. SSD vs HDD (Throughput Reference)
+## 10. SSD vs HDD (Throughput Reference)  `[TIER 3 - reference]`
 
 | Device | Random Read | Random Write | Seq Read | Seq Write |
 |---|---|---|---|---|
@@ -147,7 +187,7 @@ The SSD reports a smaller logical capacity than its actual physical capacity. Th
 - Sequential workloads: SSDs win but margin is smaller for cheaper SSDs.
 - HDDs are still ~10x cheaper per bit.
 
-## 11. Likely Exam Traps for SSDs
+## 11. Likely Exam Traps for SSDs  `[TIER 1 reference]`
 
 | Claim | Truth |
 |---|---|
@@ -167,9 +207,9 @@ SSDs are way faster than HDDs for random IO and competitive on sequential, but t
 
 # Part B: Files and the FD API
 
-The FD/open-file-table model is a guaranteed exam topic, especially the offset semantics for dup vs separate opens vs fork.
+> The FD/open-file-table model is a guaranteed exam topic per S23 (Q28-Q31, a four-question block). Path traversal cost is also Tier 1.
 
-## 1. What is a File?
+## 1. What is a File?  `[TIER 3]`
 
 An **array of persistent bytes** that can be read/written. The file system is the collection of all files plus the OS subsystem managing them.
 
@@ -178,7 +218,9 @@ Files have **three kinds of names**:
 - **path:** human-friendly string (`/usr/lib/file.so`)
 - **file descriptor (fd):** integer index into a per-process table (used during reads/writes)
 
-## 2. inode Basics
+## 2. inode Basics  `[TIER 1 conceptual]`
+
+> **Sample exam hits**: SP22 Q34, F15 Q56, S23 Q33 all test "filename is NOT in the inode" as T/F traps. Pattern summary high-frequency gotcha #1.
 
 An inode stores **metadata** about a file:
 - location (where data blocks live on disk)
@@ -190,7 +232,7 @@ An inode stores **metadata** about a file:
 
 The inode is the canonical identity of a file. The name is just a label sitting in some directory.
 
-## 3. Why Not Just Use inode Numbers in System Calls?
+## 3. Why Not Just Use inode Numbers in System Calls?  `[TIER 3]`
 
 The naive API:
 ```c
@@ -205,7 +247,9 @@ Problems:
 
 So we evolve the API.
 
-## 4. Paths and Directories
+## 4. Paths and Directories  `[TIER 1]`
+
+> **Sample exam hits**: S23 Q24 (path `/this/exam/is/hard` requires 5 inode reads). Pattern summary calls path traversal Tier 1.
 
 A **directory** is a special file whose contents are a mapping from string names to inode numbers:
 ```
@@ -215,7 +259,7 @@ A **directory** is a special file whose contents are a mapping from string names
 
 Directories form a **tree** rooted at `/`. File names only need to be unique **within their directory**, so `/usr/lib/file.so` and `/tmp/file.so` can coexist.
 
-### Path Translation Cost (likely exam question)
+### Path Translation Cost (LIKELY EXAM QUESTION)
 
 To open `/etc/bashrc` from scratch:
 
@@ -226,11 +270,26 @@ To open `/etc/bashrc` from scratch:
 5. Read inode 3 (bashrc file).
 6. Read bashrc's data block.
 
-**Total: 6 reads** for a path two levels deep. Generalize: each path component costs 2 reads (inode + data), plus 2 for the final file. The OS caches prefix lookups (`/a/b`, `/a/bb`, `/a/bbb` all share `/a`).
+**Total: 6 reads** for a path two levels deep. Generalize:
+```
+Inode reads      = depth + 1     (root + each component)
+Directory reads  = depth         (one for each level of traversal)
+Total cold reads = 2*depth + 1  (excluding final file's data block)
+```
+
+Drill table for path lookup inode counts:
+| Path | Inode reads |
+|---|---|
+| `/foo` | 2 (root, foo) |
+| `/foo/bar` | 3 |
+| `/a/b/c/d` | 5 |
+| `/this/exam/is/hard` | 5 (S23 Q24 answer) |
+
+The OS caches prefix lookups (`/a/b`, `/a/bb`, `/a/bbb` all share `/a`).
 
 This is **the** reason `open` is separate from `read`/`write`: traversal is expensive, do it once.
 
-### Special Directory Entries
+### Special Directory Entries  `[TIER 3]`
 
 Every directory contains:
 - `.` (self) inode = this directory's inode
@@ -238,13 +297,13 @@ Every directory contains:
 
 Visible in `ls -la` output.
 
-## 5. Why No `writedir`?
+## 5. Why No `writedir`?  `[TIER 3]`
 
 Directories are managed indirectly through `mkdir`, `rmdir`, file creation, and `unlink`. You don't write raw bytes to a directory because the file system needs to maintain its internal structure (inode pointers, etc.) carefully. Random user writes would corrupt the FS.
 
 `readdir` is fine because reading is safe.
 
-## 6. The FD-Based File API (the real one)
+## 6. The FD-Based File API  `[TIER 2]`
 
 ```c
 int fd = open(char *path, int flag, mode_t mode);  // do the traversal once
@@ -258,7 +317,9 @@ close(int fd);
 - Per-fd offset is well-defined.
 - String paths (human-friendly), hierarchical, and no repeated lookup cost.
 
-## 7. The Three-Layer FD Model (this is the exam question)
+## 7. The Three-Layer FD Model  `[TIER 2 - drill]`
+
+> **Sample exam hits**: S23 Q28-Q31 (four questions on this exact mechanism).
 
 ```
 Per-process FD Table       System-wide Open File Table       inode Table
@@ -279,7 +340,7 @@ Three levels:
 2. **Open file table (system-wide):** stores the offset, inode pointer, ref count, mode flags.
 3. **inode table:** the actual file metadata.
 
-### xv6 Source Reference (might appear in code reading questions)
+### xv6 Source Reference
 
 ```c
 struct file {
@@ -297,35 +358,19 @@ struct {
 } ftable;
 ```
 
-## 8. Critical: Offset Semantics
+## 8. Critical: Offset Semantics  `[TIER 2 - HIGH YIELD]`
 
-**This is the most exam-prone topic in the lecture.** Three operations create fds, and they behave differently:
+> **Sample exam hits**: S23 Q28 (`dup` shares offset), Q29 (`fork` shares offset), Q30 (separate `open` does NOT share), Q31 (parent read advances child's view of offset).
+>
+> Per pattern summary, this whole topic is a four-question block in S23. Drill these three rules until reflex.
 
-### Two separate `open`s on the same file -> two open file table entries
+**Three rules** that get tested as T/F traps:
 
-```c
-int fd1 = open("file.txt");  // returns 3
-int fd2 = open("file.txt");  // returns 4
-```
-Both fds point to the **same inode** but to **different open file table entries**. Each has its own offset. A read on fd1 does not advance fd2's offset.
-
-### `dup` -> shared open file table entry
-
-```c
-int fd2 = open("file.txt");  // returns 4
-int fd3 = dup(fd2);          // returns 5
-```
-fd2 and fd3 point to the **same open file table entry**. They share the offset. A read on fd2 advances the offset for fd3 too.
-
-### `fork()` -> child inherits, shares open file table entries with parent
-
-```c
-int fd = open("file.txt");
-fork();
-// Both parent and child have fd pointing to the SAME open file table entry.
-// refcnt on that entry goes to 2.
-// Reads/writes by either side advance the shared offset.
-```
+| Operation | New open file entry? | Shared offset with original? |
+|---|---|---|
+| `open()` (second call on same path) | **YES, new entry** | **NO, independent** |
+| `dup(fd)` | **NO, same entry** | **YES, shared** |
+| `fork()` | **NO, child shares parent's entries** | **YES, shared** |
 
 ### Worked Practice Problem (from slide 60)
 
@@ -351,7 +396,9 @@ Tracing:
 - **offset_fd2 = 16**
 - **offset_fd3 = 16** (shared with fd2)
 
-## 9. lseek
+> **Drill mantra**: open = NEW entry (independent). dup = SAME entry (shared). fork = SAME entry (shared across processes).
+
+## 9. lseek  `[TIER 3]`
 
 ```c
 off_t lseek(int fd, off_t offset, int whence);
@@ -365,7 +412,9 @@ off_t lseek(int fd, off_t offset, int whence);
 
 Just modifies the offset field in the open file table entry.
 
-## 10. fsync (durability)
+## 10. fsync (durability)  `[TIER 2]`
+
+> **Sample exam hits**: SP22 Q22, S23 Q26 ("write returns before data hits disk - only fsync guarantees durability"). High-frequency gotcha #3 in pattern summary.
 
 The FS buffers writes in memory for performance (batching, coalescing, deferred allocation). On crash, buffered data is lost.
 
@@ -375,7 +424,11 @@ fsync(int fd);
 
 Forces buffers to flush to disk **and** tells the disk to flush its internal write cache. Only after fsync returns is the data durable.
 
-## 11. Deleting Files
+> **Single-line gotcha**: `write()` returning is NOT a durability guarantee. Only `fsync()` is.
+
+## 11. Deleting Files  `[TIER 2]`
+
+> **Sample exam hits**: S23 Q42 (open + fork + parent unlinks + parent exits + child exits scenario - inode freed when child exits). Lecture 19 quiz on slide 51 also reproduces this.
 
 There is **no `delete` system call**. Files vanish through reference counting:
 
@@ -400,7 +453,7 @@ exit();                      // child's fd closes, refcnt -> 0, NOW the inode is
 
 **Answer:** the inode is marked free **when the child exits**. Not at unlink, not at parent exit.
 
-## 12. rename
+## 12. rename  `[TIER 3]`
 
 ```c
 rename(char *old, char *new);
@@ -414,9 +467,11 @@ Atomic on most file systems (the rename either fully takes effect or doesn't).
 
 ### Crash-Safety Issue
 
-If the system crashes between the "delete old link" and "create new link" steps, you can end up with no link (file orphaned) or both links (depending on order). This is why journaling exists (covered in `04_crash_consistency.md`).
+If the system crashes between the "delete old link" and "create new link" steps, you can end up with no link (file orphaned) or both links (depending on order). This is why journaling exists.
 
-## 13. The Atomic File Update Pattern (memorize this idiom)
+## 13. The Atomic File Update Pattern  `[TIER 2 - foundational]`
+
+> Not directly tested in samples, but it's the canonical "communicating requirements" example and underlies crash consistency lecture.
 
 To safely update `file.txt` so that on crash you see either fully-old or fully-new contents:
 
@@ -433,7 +488,7 @@ Why this works:
 
 **Forgetting fsync** is a real-world bug. The rename could complete but the new data could still be sitting in a write buffer that hasn't reached disk.
 
-## 14. Likely Exam Trap Patterns
+## 14. Likely Exam Trap Patterns  `[TIER 2 reference]`
 
 | Question pattern | Right answer |
 |---|---|
@@ -445,3 +500,23 @@ Why this works:
 | `rename` moves data when crossing directories | **False.** Just rewires the directory entry. |
 | `fsync` is necessary for durability | **True.** Buffered writes are not durable. |
 | Directories can be written via the `write` syscall | **False.** Use mkdir/rmdir/creat/unlink. |
+
+---
+
+## 15. What to Drill (ranked by sample exam frequency)
+
+1. **FTL direct map vs log throughput math** (Tier 1, Part A). SP22 Q49-Q50 and S23 Q44 directly test this.
+2. **Path traversal cost** (Tier 1, Part B Section 4). Inode reads = depth + 1. S23 Q24 tested this.
+3. **FD offset semantics: open vs dup vs fork** (Tier 2, Part B Section 8). S23 Q28-Q31 was a four-question block.
+4. **Inode does not contain filename** (Tier 1 gotcha). SP22 Q34, F15 Q56, S23 Q33.
+5. **fsync vs write durability** (Tier 2). SP22 Q22, S23 Q26.
+6. **Open + fork + unlink scenario** (Tier 2). S23 Q42 tested exactly this.
+7. **Page vs block granularity** (Tier 1 SSD trap). One-line T/F.
+
+## 16. What to Skim (low yield)
+
+- Cell type table (SLC/MLC/TLC/QLC details).
+- HDD vs SSD throughput numbers.
+- lseek `whence` flag table.
+- rename internals beyond "doesn't move data".
+- Special directory entries (`.` and `..`).
