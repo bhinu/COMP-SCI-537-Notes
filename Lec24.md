@@ -242,11 +242,6 @@ Container "math" (mostly conceptual, not numeric):
 ```
 
 ---
-
-## Where this fits in your study sequence
-
-Slot into **Day 8 (VMs/extras)** of your existing 9-day plan: swap in containers as a new block. Practice the docker run sequence (slide 32) and the namespace-to-symptom table.
-
 Containers will likely be 4 to 8 questions on the exam (T/F + 1 to 2 MC + maybe a discussion-style). Since you have not seen these on prior exams, **over-prepare on namespaces vs cgroups vs overlayfs distinctions**.
 
 The single biggest "gotcha" worth flagging: **namespaces are not a security boundary** (slide 15). That's the kind of T/F where the obvious answer is wrong.
